@@ -1,18 +1,79 @@
 """Generate Dockit MDX from Python source without importing the package."""
 import argparse
 import ast
+import copy
 import json
 from pathlib import Path
 import re
+import tokenize
+from .docstrings import format_docstring
 
 
-def prose(value):
-    """Escape MDX expressions/JSX outside fenced and inline code."""
-    parts = re.split(r'(```[^\n]*\n.*?```|~~~[^\n]*\n.*?~~~|`[^`\n]+`)', value, flags=re.S)
-    return ''.join(part if index % 2 else part.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;').replace('{', '&#123;').replace('}', '&#125;') for index, part in enumerate(parts))
+def fence(value: str, language: str = "python") -> str:
+    """Choose a fence longer than any backtick run in the source."""
+    longest = max((len(m.group()) for m in re.finditer(r"`+", value)), default=0)
+    marker = "`" * max(3, longest + 1)
+    return f"{marker}{language}\n{value}\n{marker}"
+
+
+def prose(value: str) -> str:
+    """Preserve Markdown code, escape MDX expressions and JSX in prose.
+
+    Python docstrings are data, never executable MDX. RST roles/directives are
+    retained as readable text; this is intentionally not a Sphinx interpreter.
+    """
+    lines = []
+    active = None
+    for line in value.splitlines():
+        marker = re.match(r"^\s*(`{3,}|~{3,})", line)
+        if active:
+            lines.append(line)
+            if re.fullmatch(r" {0,3}" + re.escape(active[0]) + "{" + str(len(active)) + r",}[ \t]*", line):
+                active = None
+            continue
+        if marker:
+            active = marker[1]
+            lines.append(line)
+            continue
+        # Inline code is literal in MDX and should retain exact syntax.
+        parts = re.split(r"((?<!`)(`+)(?!`).*?(?<!`)\2(?!`))", line)
+        # re.split also returns the captured delimiter; remove those captures.
+        parts = [part for i, part in enumerate(parts) if i % 3 != 2]
+        for i in range(0, len(parts), 2):
+            parts[i] = (parts[i].replace("&", "&amp;")
+                        .replace("<", "&lt;").replace(">", "&gt;")
+                        .replace("{", "&#123;").replace("}", "&#125;"))
+        escaped = "".join(parts)
+        # MDX recognizes ESM declarations even without JSX or braces.
+        esm = re.match(r"^( {0,3})(import|export)\s", escaped)
+        if esm:
+            start = len(esm[1])
+            escaped = escaped[:start] + "&#" + str(ord(escaped[start])) + ";" + escaped[start + 1:]
+        lines.append(escaped)
+    if active:
+        lines.append(active)
+    return "\n".join(lines)
+
+
+def assignment_aliases(tree):
+    """Resolve local public singleton constructors statically; never call them."""
+    classes = {node.name: node for node in tree.body if isinstance(node, ast.ClassDef)}
+    result = {}
+    for node in tree.body:
+        if isinstance(node, ast.Assign) and isinstance(node.value, ast.Call) and isinstance(node.value.func, ast.Name) and node.value.func.id in classes:
+            for target in node.targets:
+                if isinstance(target, ast.Name) and not target.id.startswith('_'):
+                    alias = copy.deepcopy(classes[node.value.func.id])
+                    alias.name = target.id
+                    alias.lineno = node.lineno
+                    alias._autodoc_assignment = ast.unparse(node)
+                    result[target.id] = alias
+    return result
 
 
 def signature(node):
+    if hasattr(node, '_autodoc_assignment'):
+        return node._autodoc_assignment
     if isinstance(node, ast.ClassDef):
         bases = [ast.unparse(base) for base in node.bases]
         bases += [ast.unparse(keyword) for keyword in node.keywords]
@@ -25,36 +86,41 @@ def signature(node):
 
 
 def declaration(node, qualified, source_url, index=None, module=None, url_prefix='/api'):
-    lines = [f'## {qualified}', '', '```python', signature(node), '```', '']
+    lines = [f'## `{qualified}`', '', fence(signature(node)), '']
     if source_url:
         lines += [f'[Source]({source_url}#L{node.lineno})', '']
     doc = ast.get_docstring(node)
     if doc:
-        lines += [prose(doc), '']
+        lines += [prose(format_docstring(doc)), '']
     if isinstance(node, ast.ClassDef):
         for child in node.body:
-            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)) and (not child.name.startswith('_') or child.name == '__init__'):
+            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)) and (not child.name.startswith('_') or child.name == '__init__' or (hasattr(node, '_autodoc_assignment') and child.name in {'__call__', '__matmul__', '__or__', '__getitem__'})):
                 lines += declaration(child, f'{qualified}.{child.name}', source_url)
             elif isinstance(child, ast.AnnAssign) and isinstance(child.target, ast.Name) and not child.target.id.startswith('_'):
-                lines += ['```python', ast.unparse(child), '```', '']
+                lines += [fence(ast.unparse(child)), '']
         if index:
             inherited = index.inherited(module, node)
             if inherited:
                 lines += ['### Inherited members', '']
                 for name, owner_module, owner_class in inherited:
-                    route = url_prefix.rstrip('/') + '/' + '/'.join(owner_module.split('.')[1:])
+                    route = index.route(owner_module, url_prefix)
                     lines += [f'- `{name}` — from [`{owner_module}.{owner_class}`]({route}#{owner_class.lower()})']
                 lines += ['']
         for child in node.body:
             if isinstance(child, ast.Assign) and all(isinstance(target, ast.Name) and not target.id.startswith('_') for target in child.targets):
-                lines += ['```python', ast.unparse(child), '```', '']
+                lines += [fence(ast.unparse(child)), '']
     return lines
 
 
 class SourceIndex:
     """Resolve local public re-exports and base classes without executing code."""
-    def __init__(self, sources):
+    def __init__(self, sources, root=None):
         self.sources = sources
+        self.root = root or min(sources, key=lambda name: len(name.split('.')))
+
+    def route(self, module, url_prefix):
+        relative = module[len(self.root):].strip('.').replace('.', '/')
+        return url_prefix.rstrip('/') + ('/' + relative if relative else '')
 
     def exports(self, module, seen=None, public=True):
         seen = set() if seen is None else set(seen)
@@ -85,6 +151,7 @@ class SourceIndex:
                     explicit = ast.literal_eval(node.value)
                 except (ValueError, TypeError):
                     pass
+        result.update({name: (module, node) for name, node in assignment_aliases(tree).items()})
         if not public:
             return result
         return {name: value for name, value in result.items() if name in explicit} if isinstance(explicit, (list, tuple)) else {name: value for name, value in result.items() if not name.startswith('_')}
@@ -120,11 +187,12 @@ class SourceIndex:
         return result
 
 
-def render(path, module, section='Python API', order=0, source_url=None, index=None, url_prefix='/api'):
-    tree = ast.parse(path.read_text(encoding='utf-8'), filename=str(path))
+def render(path, module, section='Python API', order=0, source_url=None, index=None, url_prefix='/api', include=None):
+    with tokenize.open(path) as stream:
+        tree = ast.parse(stream.read(), filename=str(path))
     lines = ['---', f'title: {json.dumps(module)}', f'section: {json.dumps(section)}', f'order: {order}', f'description: {json.dumps("Python API reference for " + module)}', '---', '', f'# {module}', '']
     if ast.get_docstring(tree):
-        lines += [prose(ast.get_docstring(tree)), '']
+        lines += [prose(format_docstring(ast.get_docstring(tree))), '']
     exports = None
     for node in tree.body:
         if isinstance(node, ast.Assign) and any(isinstance(target, ast.Name) and target.id == '__all__' for target in node.targets):
@@ -134,19 +202,26 @@ def render(path, module, section='Python API', order=0, source_url=None, index=N
                     exports = set(value)
             except (ValueError, TypeError):
                 pass
+    definitions = {node.name: node for node in tree.body if isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef))}
     for node in tree.body:
         if isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
+            if definitions[node.name] is not node:
+                continue
+            if include is not None and node.name not in include:
+                continue
             if node.name in exports if exports is not None else not node.name.startswith('_'):
                 lines += declaration(node, node.name, source_url, index, module, url_prefix)
         elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name) and not node.target.id.startswith('_'):
-            lines += ['```python', ast.unparse(node), '```', '']
+            lines += [fence(ast.unparse(node)), '']
+    for name, node in assignment_aliases(tree).items():
+        if (include is None or name in include) and (exports is None or name in exports):
+            lines += declaration(node, name, source_url, index, module, url_prefix)
     if index:
         reexports = [(name, owner, node) for name, (owner, node) in index.exports(module).items() if owner != module]
         if reexports:
             lines += ['## Public imports', '', 'These symbols are available from this module. Their definitions are documented in the linked modules.', '']
             for name, owner, node in reexports:
-                target = owner.split('.')[1:]
-                route = url_prefix.rstrip('/') + ('/' + '/'.join(target) if target else '')
+                route = index.route(owner, url_prefix)
                 lines += [f'- [`{name}`]({route}#{node.name.lower()}) — `{owner}.{node.name}`']
             lines += ['']
     return '\n'.join(lines)
@@ -164,8 +239,9 @@ def generate(source, output, module, section='Python API', source_url=None, url_
         components = list(path.relative_to(source).with_suffix('').parts)
         if components[-1] == '__init__':
             components.pop()
-        sources['.'.join([module, *components])] = (path, ast.parse(path.read_text(encoding='utf-8'), filename=str(path)))
-    index = SourceIndex(sources)
+        with tokenize.open(path) as stream:
+            sources['.'.join([module, *components])] = (path, ast.parse(stream.read(), filename=str(path)))
+    index = SourceIndex(sources, module)
     pages = []
     # Parse every file before writing, so syntax errors cannot produce half a build.
     for path in paths:
@@ -201,10 +277,15 @@ def main():
     parser.add_argument('--module', required=True, help='Import name of the source package')
     parser.add_argument('--section', default='Python API')
     parser.add_argument('--url-prefix', default='/api', help='Public route of the generated API root')
+    parser.add_argument('--page-map', type=Path, help='JSON topic pages with title, slug, description and module patterns')
     parser.add_argument('--source-url', help='URL of the package directory at this exact revision')
     args = parser.parse_args()
     try:
-        count = generate(args.source, args.output, args.module, args.section, args.source_url, args.url_prefix)
+        if args.page_map:
+            from .grouped import generate_grouped
+            count = generate_grouped(args.source, args.output, args.module, args.page_map, args.section, args.source_url, args.url_prefix)
+        else:
+            count = generate(args.source, args.output, args.module, args.section, args.source_url, args.url_prefix)
     except (ValueError, SyntaxError, OSError) as error:
         parser.error(str(error))
     print(f'Generated {count} Dockit API pages in {args.output}')
