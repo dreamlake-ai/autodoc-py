@@ -81,7 +81,7 @@ class Client(Something):
             output = root / 'pages'
             generate(source, output, 'sample')
             page = (output / '+Page.mdx').read_text()
-            self.assertIn('[`Child`](child/#child)', page)
+            self.assertIn('[`Child`](/api/child#child)', page)
             child = (output / 'child/+Page.mdx').read_text()
             self.assertIn('`count` — from `sample.base.Base`', child)
             self.assertIn('`__init__` — from `sample.base.Base`', child)

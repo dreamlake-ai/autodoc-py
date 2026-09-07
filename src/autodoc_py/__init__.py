@@ -119,7 +119,7 @@ class SourceIndex:
         return result
 
 
-def render(path, module, section='Python API', order=0, source_url=None, index=None):
+def render(path, module, section='Python API', order=0, source_url=None, index=None, url_prefix='/api'):
     tree = ast.parse(path.read_text(encoding='utf-8'), filename=str(path))
     lines = ['---', f'title: {json.dumps(module)}', f'section: {json.dumps(section)}', f'order: {order}', f'description: {json.dumps("Python API reference for " + module)}', '---', '', f'# {module}', '']
     if ast.get_docstring(tree):
@@ -143,18 +143,15 @@ def render(path, module, section='Python API', order=0, source_url=None, index=N
         reexports = [(name, owner, node) for name, (owner, node) in index.exports(module).items() if owner != module]
         if reexports:
             lines += ['## Public imports', '', 'These symbols are available from this module. Their definitions are documented in the linked modules.', '']
-            import posixpath
-            root = module.split('.')[0]
-            current = module.split('.')[1:]
             for name, owner, node in reexports:
                 target = owner.split('.')[1:]
-                relative = posixpath.relpath('/'.join(target) or '.', '/'.join(current) or '.')
-                lines += [f'- [`{name}`]({relative}/#{node.name.lower()}) — `{owner}.{node.name}`']
+                route = url_prefix.rstrip('/') + ('/' + '/'.join(target) if target else '')
+                lines += [f'- [`{name}`]({route}#{node.name.lower()}) — `{owner}.{node.name}`']
             lines += ['']
     return '\n'.join(lines)
 
 
-def generate(source, output, module, section='Python API', source_url=None):
+def generate(source, output, module, section='Python API', source_url=None, url_prefix='/api'):
     source, output = Path(source).resolve(), Path(output).resolve()
     if not source.is_dir():
         raise ValueError(f'Package directory does not exist: {source}')
@@ -180,7 +177,7 @@ def generate(source, output, module, section='Python API', source_url=None):
         name = '.'.join([module, *components])
         target = output.joinpath(*components, '+Page.mdx')
         url = f'{source_url.rstrip("/")}/{relative.as_posix()}' if source_url else None
-        pages.append((target, render(path, name, section, len(pages), url, index)))
+        pages.append((target, render(path, name, section, len(pages), url, index, url_prefix)))
     output.mkdir(parents=True, exist_ok=True)
     manifest = output / '.autodoc-py.json'
     previous = json.loads(manifest.read_text()) if manifest.exists() else []
@@ -202,10 +199,11 @@ def main():
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--module', required=True, help='Import name of the source package')
     parser.add_argument('--section', default='Python API')
+    parser.add_argument('--url-prefix', default='/api', help='Public route of the generated API root')
     parser.add_argument('--source-url', help='URL of the package directory at this exact revision')
     args = parser.parse_args()
     try:
-        count = generate(args.source, args.output, args.module, args.section, args.source_url)
+        count = generate(args.source, args.output, args.module, args.section, args.source_url, args.url_prefix)
     except (ValueError, SyntaxError, OSError) as error:
         parser.error(str(error))
     print(f'Generated {count} Dockit API pages in {args.output}')

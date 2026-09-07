@@ -9,7 +9,7 @@ autodoc-py src/vuer --module vuer --output docs/pages/api \
   --source-url https://github.com/vuer-ai/vuer/blob/main/src/vuer
 ```
 
-For reproducible builds, pin installation to a commit and use the documented revision's commit SHA in `--source-url`. Run the command on each version branch against its matching source directory (`vuer` or `src/vuer`). The output follows Dockit's `pages/**/+Page.mdx` convention and includes frontmatter for navigation and search.
+For reproducible builds, pin installation to a commit and use the documented revision's commit SHA in `--source-url`. Run the command on each version branch against its matching source directory (`vuer` or `src/vuer`). Set `--url-prefix` when the public API root differs from `/api`; links use absolute routes so they work with or without trailing slashes. The output follows Dockit's `pages/**/+Page.mdx` convention and includes frontmatter for navigation and search.
 
 The generator emits module docstrings, public classes and functions, class methods and constructors, annotated and assigned class attributes, signatures, and source links. Local explicit and star imports produce linked public re-export indexes; local base classes contribute inherited member lists. Literal `__all__` controls which locally defined classes/functions are included. Private modules and tests are skipped. MDX expression and JSX characters in prose are escaped, while inline and fenced code are preserved. A manifest tracks generated files so removed modules disappear without deleting manual pages. All Python files are parsed before output changes.
 
