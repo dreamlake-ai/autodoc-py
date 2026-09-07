@@ -83,8 +83,8 @@ class Client(Something):
             page = (output / '+Page.mdx').read_text()
             self.assertIn('[`Child`](/api/child#child)', page)
             child = (output / 'child/+Page.mdx').read_text()
-            self.assertIn('`count` — from `sample.base.Base`', child)
-            self.assertIn('`__init__` — from `sample.base.Base`', child)
+            self.assertIn('`count` — from [`sample.base.Base`](/api/base#base)', child)
+            self.assertIn('`__init__` — from [`sample.base.Base`](/api/base#base)', child)
             self.assertNotIn('`tag` — from', child)
             self.assertIn("tag = 'child'", child)
 

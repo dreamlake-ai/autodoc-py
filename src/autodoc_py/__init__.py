@@ -24,7 +24,7 @@ def signature(node):
     return result
 
 
-def declaration(node, qualified, source_url, index=None, module=None):
+def declaration(node, qualified, source_url, index=None, module=None, url_prefix='/api'):
     lines = [f'## {qualified}', '', '```python', signature(node), '```', '']
     if source_url:
         lines += [f'[Source]({source_url}#L{node.lineno})', '']
@@ -42,7 +42,8 @@ def declaration(node, qualified, source_url, index=None, module=None):
             if inherited:
                 lines += ['### Inherited members', '']
                 for name, owner_module, owner_class in inherited:
-                    lines += [f'- `{name}` — from `{owner_module}.{owner_class}`']
+                    route = url_prefix.rstrip('/') + '/' + '/'.join(owner_module.split('.')[1:])
+                    lines += [f'- `{name}` — from [`{owner_module}.{owner_class}`]({route}#{owner_class.lower()})']
                 lines += ['']
         for child in node.body:
             if isinstance(child, ast.Assign) and all(isinstance(target, ast.Name) and not target.id.startswith('_') for target in child.targets):
@@ -136,7 +137,7 @@ def render(path, module, section='Python API', order=0, source_url=None, index=N
     for node in tree.body:
         if isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
             if node.name in exports if exports is not None else not node.name.startswith('_'):
-                lines += declaration(node, node.name, source_url, index, module)
+                lines += declaration(node, node.name, source_url, index, module, url_prefix)
         elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name) and not node.target.id.startswith('_'):
             lines += ['```python', ast.unparse(node), '```', '']
     if index:

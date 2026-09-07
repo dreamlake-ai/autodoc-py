@@ -21,3 +21,9 @@ Development:
 python -m pip install -e .
 python -m unittest discover -s tests -v
 ```
+
+Historical compatibility: `validation/vuer-tags-2026-09-07.json` records successful source generation and generated link/anchor checks across all 149 upstream Vuer tags, including the original `tassa/`, intermediate `vuer/`, and modern `src/vuer/` package layouts. This checks source compatibility and internal links, not historical runtime behavior or MDX compilation. Re-run with:
+
+```sh
+python validation/audit_vuer_tags.py /path/to/vuer --report /tmp/vuer-audit.json
+```
