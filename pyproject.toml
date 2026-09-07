@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dreamlake-autodoc-py"
+version = "0.1.0"
+description = "Import-free Python API documentation for DreamLake Dockit"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+authors = [{name = "DreamLake AI"}]
+
+[project.scripts]
+autodoc-py = "autodoc_py:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
