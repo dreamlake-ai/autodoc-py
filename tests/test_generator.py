@@ -70,6 +70,24 @@ class Client(Something):
             self.assertIn('def _public()', page)
             self.assertNotIn('def excluded()', page)
 
+    def test_local_reexports_and_inherited_attributes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / 'package'
+            source.mkdir()
+            (source / '__init__.py').write_text('from .child import *')
+            (source / 'base.py').write_text('class Base:\n    tag = "base"\n    count: int = 3\n    def __init__(self, value=1): pass\n    def run(self): pass')
+            (source / 'child.py').write_text('from .base import Base\n__all__ = ["Child"]\nclass Child(Base):\n    tag = "child"')
+            output = root / 'pages'
+            generate(source, output, 'sample')
+            page = (output / '+Page.mdx').read_text()
+            self.assertIn('[`Child`](child/#child)', page)
+            child = (output / 'child/+Page.mdx').read_text()
+            self.assertIn('`count` — from `sample.base.Base`', child)
+            self.assertIn('`__init__` — from `sample.base.Base`', child)
+            self.assertNotIn('`tag` — from', child)
+            self.assertIn("tag = 'child'", child)
+
     def test_fenced_code_preserved(self):
         text = 'Text {value}\n```python\nx = {"a": 1}\n```'
         self.assertEqual(prose(text), 'Text &#123;value&#125;\n```python\nx = {"a": 1}\n```')

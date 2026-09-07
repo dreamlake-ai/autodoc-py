@@ -24,7 +24,7 @@ def signature(node):
     return result
 
 
-def declaration(node, qualified, source_url):
+def declaration(node, qualified, source_url, index=None, module=None):
     lines = [f'## {qualified}', '', '```python', signature(node), '```', '']
     if source_url:
         lines += [f'[Source]({source_url}#L{node.lineno})', '']
@@ -37,10 +37,89 @@ def declaration(node, qualified, source_url):
                 lines += declaration(child, f'{qualified}.{child.name}', source_url)
             elif isinstance(child, ast.AnnAssign) and isinstance(child.target, ast.Name) and not child.target.id.startswith('_'):
                 lines += ['```python', ast.unparse(child), '```', '']
+        if index:
+            inherited = index.inherited(module, node)
+            if inherited:
+                lines += ['### Inherited members', '']
+                for name, owner_module, owner_class in inherited:
+                    lines += [f'- `{name}` — from `{owner_module}.{owner_class}`']
+                lines += ['']
+        for child in node.body:
+            if isinstance(child, ast.Assign) and all(isinstance(target, ast.Name) and not target.id.startswith('_') for target in child.targets):
+                lines += ['```python', ast.unparse(child), '```', '']
     return lines
 
 
-def render(path, module, section='Python API', order=0, source_url=None):
+class SourceIndex:
+    """Resolve local public re-exports and base classes without executing code."""
+    def __init__(self, sources):
+        self.sources = sources
+
+    def exports(self, module, seen=None, public=True):
+        seen = set() if seen is None else set(seen)
+        if module in seen or module not in self.sources:
+            return {}
+        seen.add(module)
+        path, tree = self.sources[module]
+        result = {}
+        explicit = None
+        for node in tree.body:
+            if isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
+                result[node.name] = (module, node)
+            elif isinstance(node, ast.ImportFrom):
+                base = module if path.name == '__init__.py' else module.rpartition('.')[0]
+                if node.level:
+                    pieces = base.split('.')
+                    imported = '.'.join(pieces[:len(pieces) - node.level + 1] + ([node.module] if node.module else []))
+                else:
+                    imported = node.module or ''
+                available = self.exports(imported, seen)
+                for alias in node.names:
+                    if alias.name == '*':
+                        result.update(available)
+                    elif alias.name in available:
+                        result[alias.asname or alias.name] = available[alias.name]
+            elif isinstance(node, ast.Assign) and any(isinstance(t, ast.Name) and t.id == '__all__' for t in node.targets):
+                try:
+                    explicit = ast.literal_eval(node.value)
+                except (ValueError, TypeError):
+                    pass
+        if not public:
+            return result
+        return {name: value for name, value in result.items() if name in explicit} if isinstance(explicit, (list, tuple)) else {name: value for name, value in result.items() if not name.startswith('_')}
+
+    def inherited(self, module, node, seen=None):
+        seen = set() if seen is None else set(seen)
+        identity = (module, node.name)
+        if identity in seen:
+            return []
+        seen.add(identity)
+        def names(item):
+            if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                return [item.name]
+            if isinstance(item, ast.AnnAssign) and isinstance(item.target, ast.Name):
+                return [item.target.id]
+            if isinstance(item, ast.Assign):
+                return [target.id for target in item.targets if isinstance(target, ast.Name)]
+            return []
+        own = {name for child in node.body for name in names(child)}
+        result = []
+        available = self.exports(module, public=False)
+        for base in node.bases:
+            resolved = available.get(ast.unparse(base))
+            if not resolved or not isinstance(resolved[1], ast.ClassDef):
+                continue
+            base_module, base_node = resolved
+            candidates = [(name, base_module, base_node.name) for child in base_node.body for name in names(child)]
+            candidates += self.inherited(base_module, base_node, seen)
+            for name, owner_module, owner_class in candidates:
+                if name not in own and (not name.startswith('_') or name == '__init__'):
+                    own.add(name)
+                    result.append((name, owner_module, owner_class))
+        return result
+
+
+def render(path, module, section='Python API', order=0, source_url=None, index=None):
     tree = ast.parse(path.read_text(encoding='utf-8'), filename=str(path))
     lines = ['---', f'title: {json.dumps(module)}', f'section: {json.dumps(section)}', f'order: {order}', f'description: {json.dumps("Python API reference for " + module)}', '---', '', f'# {module}', '']
     if ast.get_docstring(tree):
@@ -57,9 +136,21 @@ def render(path, module, section='Python API', order=0, source_url=None):
     for node in tree.body:
         if isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
             if node.name in exports if exports is not None else not node.name.startswith('_'):
-                lines += declaration(node, node.name, source_url)
+                lines += declaration(node, node.name, source_url, index, module)
         elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name) and not node.target.id.startswith('_'):
             lines += ['```python', ast.unparse(node), '```', '']
+    if index:
+        reexports = [(name, owner, node) for name, (owner, node) in index.exports(module).items() if owner != module]
+        if reexports:
+            lines += ['## Public imports', '', 'These symbols are available from this module. Their definitions are documented in the linked modules.', '']
+            import posixpath
+            root = module.split('.')[0]
+            current = module.split('.')[1:]
+            for name, owner, node in reexports:
+                target = owner.split('.')[1:]
+                relative = posixpath.relpath('/'.join(target) or '.', '/'.join(current) or '.')
+                lines += [f'- [`{name}`]({relative}/#{node.name.lower()}) — `{owner}.{node.name}`']
+            lines += ['']
     return '\n'.join(lines)
 
 
@@ -70,6 +161,13 @@ def generate(source, output, module, section='Python API', source_url=None):
     paths = sorted(path for path in source.rglob('*.py') if not any(part.startswith('.') or part in {'__pycache__', '__tests__', 'tests'} for part in path.relative_to(source).parts))
     if not paths:
         raise ValueError(f'No Python sources found in {source}')
+    sources = {}
+    for path in paths:
+        components = list(path.relative_to(source).with_suffix('').parts)
+        if components[-1] == '__init__':
+            components.pop()
+        sources['.'.join([module, *components])] = (path, ast.parse(path.read_text(encoding='utf-8'), filename=str(path)))
+    index = SourceIndex(sources)
     pages = []
     # Parse every file before writing, so syntax errors cannot produce half a build.
     for path in paths:
@@ -82,7 +180,7 @@ def generate(source, output, module, section='Python API', source_url=None):
         name = '.'.join([module, *components])
         target = output.joinpath(*components, '+Page.mdx')
         url = f'{source_url.rstrip("/")}/{relative.as_posix()}' if source_url else None
-        pages.append((target, render(path, name, section, len(pages), url)))
+        pages.append((target, render(path, name, section, len(pages), url, index)))
     output.mkdir(parents=True, exist_ok=True)
     manifest = output / '.autodoc-py.json'
     previous = json.loads(manifest.read_text()) if manifest.exists() else []
