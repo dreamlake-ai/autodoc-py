@@ -7,6 +7,7 @@ from pathlib import Path
 import re
 import tokenize
 from .docstrings import format_docstring
+from .data import module_data
 
 
 def fence(value: str, language: str = "python") -> str:
@@ -74,6 +75,8 @@ def assignment_aliases(tree):
 def signature(node):
     if hasattr(node, '_autodoc_assignment'):
         return node._autodoc_assignment
+    if isinstance(node, (ast.Assign, ast.AnnAssign)):
+        return ast.unparse(node)
     if isinstance(node, ast.ClassDef):
         bases = [ast.unparse(base) for base in node.bases]
         bases += [ast.unparse(keyword) for keyword in node.keywords]
@@ -86,30 +89,8 @@ def signature(node):
 
 
 def declaration(node, qualified, source_url, index=None, module=None, url_prefix='/api'):
-    lines = [f'## `{qualified}`', '', fence(signature(node)), '']
-    if source_url:
-        lines += [f'[Source]({source_url}#L{node.lineno})', '']
-    doc = ast.get_docstring(node)
-    if doc:
-        lines += [prose(format_docstring(doc)), '']
-    if isinstance(node, ast.ClassDef):
-        for child in node.body:
-            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)) and (not child.name.startswith('_') or child.name == '__init__' or (hasattr(node, '_autodoc_assignment') and child.name in {'__call__', '__matmul__', '__or__', '__getitem__'})):
-                lines += declaration(child, f'{qualified}.{child.name}', source_url)
-            elif isinstance(child, ast.AnnAssign) and isinstance(child.target, ast.Name) and not child.target.id.startswith('_'):
-                lines += [fence(ast.unparse(child)), '']
-        if index:
-            inherited = index.inherited(module, node)
-            if inherited:
-                lines += ['### Inherited members', '']
-                for name, owner_module, owner_class in inherited:
-                    route = index.route(owner_module, url_prefix)
-                    lines += [f'- `{name}` — from [`{owner_module}.{owner_class}`]({route}#{owner_class.lower()})']
-                lines += ['']
-        for child in node.body:
-            if isinstance(child, ast.Assign) and all(isinstance(target, ast.Name) and not target.id.startswith('_') for target in child.targets):
-                lines += [fence(ast.unparse(child)), '']
-    return lines
+    from .presentation import render_declaration
+    return render_declaration(node, qualified, source_url, index, module, url_prefix)
 
 
 class SourceIndex:
@@ -130,7 +111,11 @@ class SourceIndex:
         path, tree = self.sources[module]
         result = {}
         explicit = None
-        for node in tree.body:
+        nodes = list(tree.body)
+        for statement in tree.body:
+            if isinstance(statement, ast.Try):
+                nodes.extend(n for n in statement.body if isinstance(n, (ast.Import, ast.ImportFrom)))
+        for node in nodes:
             if isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
                 result[node.name] = (module, node)
             elif isinstance(node, ast.ImportFrom):
@@ -151,6 +136,7 @@ class SourceIndex:
                     explicit = ast.literal_eval(node.value)
                 except (ValueError, TypeError):
                     pass
+        result.update({name: (module, node) for name, node in module_data(tree).items()})
         result.update({name: (module, node) for name, node in assignment_aliases(tree).items()})
         if not public:
             return result
@@ -211,8 +197,9 @@ def render(path, module, section='Python API', order=0, source_url=None, index=N
                 continue
             if node.name in exports if exports is not None else not node.name.startswith('_'):
                 lines += declaration(node, node.name, source_url, index, module, url_prefix)
-        elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name) and not node.target.id.startswith('_'):
-            lines += [fence(ast.unparse(node)), '']
+    for name, node in module_data(tree).items():
+        if (include is None or name in include) and (exports is None or name in exports):
+            lines += declaration(node, name, source_url, index, module, url_prefix)
     for name, node in assignment_aliases(tree).items():
         if (include is None or name in include) and (exports is None or name in exports):
             lines += declaration(node, name, source_url, index, module, url_prefix)
@@ -267,7 +254,21 @@ def generate(source, output, module, section='Python API', source_url=None, url_
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content, encoding='utf-8')
     manifest.write_text(json.dumps(current, indent=2) + '\n')
+    add_styles(output, pages)
     return len(pages)
+
+
+def add_styles(output, pages):
+    """Ship the renderer stylesheet with generated pages, independent of Dockit."""
+    import os
+    from importlib.resources import files
+    (output / 'autodoc.css').write_text(files('autodoc_py').joinpath('api.css').read_text())
+    for path, _ in pages:
+        text = path.read_text()
+        css = os.path.relpath(output / 'autodoc.css', path.parent).replace(os.sep, '/')
+        if not css.startswith('.'): css = './' + css
+        text = re.sub(r'^(---\n.*?\n---\n)', lambda m: m[0] + '\nimport ' + json.dumps(css) + '\n', text, count=1, flags=re.S)
+        path.write_text(text)
 
 
 def main():

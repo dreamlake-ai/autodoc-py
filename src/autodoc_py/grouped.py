@@ -12,7 +12,7 @@ def anchor(text):
 
 
 def generate_grouped(source, output, module, config, section='Python API', source_url=None, url_prefix='/api'):
-    from . import SourceIndex, render
+    from . import SourceIndex, render, add_styles
     source, output = Path(source).resolve(), Path(output).resolve()
     spec = json.loads(Path(config).read_text()) if isinstance(config, (str, Path)) else config
     sources = {}
@@ -86,14 +86,18 @@ def generate_grouped(source, output, module, config, section='Python API', sourc
                     ident = anchor(name) if level == 1 else anchor(name) + '--' + slug
                     out += [f'<a id="{ident}" />', '', '#' * display_level + ' ' + label]
                     migration[next(k for k,v in old_routes.items() if v == name) + ('#' + slug if level > 1 else '')] = route(name) + '#' + ident
-                else: out.append(line)
+                else:
+                    def namespace_id(match):
+                        return 'id="' + anchor(name) + '--' + match[1] + '"'
+                    out.append(re.sub(r'id="([^"]+)"', namespace_id, line))
             bodies.append('\n'.join(out))
             for symbol, (owner, node) in index.exports(name).items():
                 if owner != name or (include is not None and symbol not in include): continue
-                kind = 'singleton' if hasattr(node, '_autodoc_assignment') else ('class' if isinstance(node, ast.ClassDef) else 'function')
+                kind = getattr(node, '_autodoc_kind', None) or ('singleton' if hasattr(node, '_autodoc_assignment') else ('class' if isinstance(node, ast.ClassDef) else 'function'))
                 lines.append(f'| [`{symbol}`]({target(name, anchor(node.name))}) | {kind} | `{name}` |')
         lines += ['', *bodies, '']
         content = re.sub(r'\]\(([^)]+)\)', rewrite, '\n'.join(lines))
+        content = re.sub(r'href="([^"]+)"', lambda m: 'href="' + rewrite(m)[2:-1] + '"' if rewrite(m).startswith('](') else m[0], content)
         pages.append((output / group['slug'] / '+Page.mdx', content))
     destinations = {url_prefix.rstrip('/') + '/' + str(path.parent.relative_to(output)): set(re.findall(r'<a id="([^"]+)"', content)) for path, content in pages}
     for _, content in pages:
@@ -115,4 +119,5 @@ def generate_grouped(source, output, module, config, section='Python API', sourc
         path.parent.mkdir(parents=True, exist_ok=True); path.write_text(content)
     manifest.write_text(json.dumps(current, indent=2) + '\n')
     (output / '.autodoc-routes.json').write_text(json.dumps(migration, indent=2) + '\n')
+    add_styles(output, pages)
     return len(pages)

@@ -3,7 +3,7 @@
 Generate Python API reference pages for [DreamLake Dockit](https://dockit.dreamlake.ai). Python 3.10+; no runtime dependencies. Source is parsed with Python's AST, never imported, so historical versions do not need their dependencies installed and application startup code does not execute.
 
 ```sh
-python -m pip install git+https://github.com/dreamlake-ai/autodoc-py.git
+python -m pip install dreamlake-autodoc-py==0.2.0a1
 autodoc-py src/vuer --module vuer --output docs/pages/api \
   --section 'Python API' \
   --source-url https://github.com/vuer-ai/vuer/blob/main/src/vuer
@@ -73,3 +73,15 @@ Historical compatibility: `validation/vuer-tags-2026-09-07.json` records success
 ```sh
 python validation/audit_vuer_tags.py /path/to/vuer --report /tmp/vuer-audit.json
 ```
+
+### Python reference display
+
+Generated pages include API cards with constructor and callable signatures,
+linked local types, parameter/default tables, return values, bases, attributes,
+and labeled properties/static/class/async methods. Public type aliases and
+trailing attribute docstrings are included. Google and Sphinx parameter fields
+are formatted without executing directives. The generator copies `autodoc.css`
+next to its output and imports it from each page; no shell patch is needed.
+
+NamedTuple/dataclass field signatures reflect source declarations. Dynamically
+created APIs and external inherited constructors are not executed or inferred.

@@ -57,6 +57,30 @@ Returns:
         self.assertIn('value = {"key": 1}', actual)
         self.assertTrue(actual.endswith('````'))
 
+    def test_numbered_list_examples_preserve_comments_and_braces(self):
+        raw = 'Four syntaxes:\n\n1. Assignment:\n    api_key: str = EnvVar("API_KEY")\n    # Or function syntax:\n    values = {"key": api_key}\n\n2. Another case:\n    result = EnvVar @ "NAME"\n\nNormal prose.'
+        actual = prose(format_docstring(raw))
+        self.assertIn('   ```python\n   api_key: str', actual)
+        self.assertIn('   # Or function syntax:', actual)
+        self.assertIn('values = {"key": api_key}', actual)
+        self.assertEqual(actual.count('```python'), 2)
+        self.assertTrue(actual.endswith('Normal prose.'))
+
+    def test_rst_literal_block_and_non_code_prose(self):
+        actual = format_docstring('Run this::\n\n    # Literal comment\n    arbitrary literal text\n\nThen continue.')
+        self.assertIn('```python\n# Literal comment\narbitrary literal text\n```', actual)
+        raw = 'Notes:\n\n    A normal paragraph with words.\n    Another sentence here.\n\n- Parent\n    - Child'
+        self.assertEqual(format_docstring(raw), raw)
+
+    def test_numbered_examples_after_field_extraction(self):
+        from autodoc_py.presentation import documentation
+        raw = 'Reader.\n\n1. Matmul:\n    batch_size: int = EnvVar @ "BATCH_SIZE"\n\n2. Or operation:\n    api_key: str = EnvVar @ "API_KEY" | "default"\n    # Or function syntax:\n    api_key: str = EnvVar("API_KEY", default="default")\n\nArgs:\n    name: Variable name'
+        narrative, *_ = documentation(raw)
+        actual = prose(format_docstring(narrative))
+        self.assertEqual(actual.count('```python'), 2)
+        self.assertIn('   # Or function syntax:', actual)
+        self.assertNotIn('Args:', actual)
+
 
 if __name__ == '__main__':
     unittest.main()

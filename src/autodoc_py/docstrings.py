@@ -3,6 +3,7 @@
 Formatting is deliberately separate from MDX escaping. Only recognized section
 bodies are transformed; ordinary Markdown is left intact.
 """
+import ast
 import re
 import textwrap
 
@@ -30,6 +31,61 @@ def _fields(body):
         else:
             result.append('')
     return '\n'.join(result)
+
+
+
+def _looks_like_python(body):
+    """Require actual Python syntax, not merely indentation or a comment."""
+    candidate = re.sub(r"(?m)^>>> ?|^\.\.\. ?", "", body)
+    try:
+        nodes = ast.parse(candidate).body
+    except SyntaxError:
+        return False
+    return any(not isinstance(node, ast.Expr) or isinstance(node.value, (ast.Call, ast.BinOp, ast.Compare, ast.Await, ast.NamedExpr)) for node in nodes)
+
+
+def _fence_indented(raw):
+    lines, result = raw.splitlines(), []
+    active, index, list_indent = None, 0, 0
+    while index < len(lines):
+        line = lines[index]
+        marker = _FENCE.match(line)
+        if active:
+            result.append(line)
+            if re.fullmatch(r' {0,3}' + re.escape(active[0]) + '{' + str(len(active)) + r',}[ \t]*', line):
+                active = None
+            index += 1
+            continue
+        if marker:
+            active = marker[1]
+            result.append(line)
+            index += 1
+            continue
+        listing = re.match(r'^( *)(?:[-*+] |\d+[.)] )', line)
+        if listing:
+            list_indent = len(listing[0])
+        elif line.strip() and not line.startswith(' '):
+            list_indent = 0
+        indent = len(line) - len(line.lstrip(' '))
+        if line.strip() and indent >= 4 and not listing:
+            end = index + 1
+            while end < len(lines) and (not lines[end].strip() or len(lines[end]) - len(lines[end].lstrip(' ')) >= indent):
+                end += 1
+            body = textwrap.dedent('\n'.join(lines[index:end])).strip('\n')
+            previous = next((item for item in reversed(result) if item.strip()), '')
+            if previous.rstrip().endswith('::') or _looks_like_python(body):
+                # Up to three spaces keep fences nested in common list examples
+                # while remaining supported by the downstream MDX escaper.
+                prefix = ' ' * list_indent if 0 < list_indent <= 3 else ''
+                if result and result[-1].strip():
+                    result.append('')
+                result.extend(prefix + part if part else '' for part in _code(body).splitlines())
+                result.append('')
+                index = end
+                continue
+        result.append(line)
+        index += 1
+    return '\n'.join(result).rstrip('\n')
 
 
 def format_docstring(raw: str) -> str:
@@ -83,4 +139,4 @@ def format_docstring(raw: str) -> str:
             result.append(_fields(body))
         result.append('')
         index = end
-    return '\n'.join(result).rstrip('\n')
+    return _fence_indented('\n'.join(result).rstrip('\n'))

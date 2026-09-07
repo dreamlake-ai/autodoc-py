@@ -2,6 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from autodoc_py import generate, prose
+from test_presentation import ParsedHTML
 
 
 class GeneratorTests(unittest.TestCase):
@@ -25,7 +26,8 @@ class Client(Something):
             output = root / 'pages'
             self.assertEqual(generate(source, output, 'sample', source_url='https://example.com/blob/ref/sample'), 2)
             page = (output / 'api/+Page.mdx').read_text()
-            self.assertIn('async def run(self, /, value: dict[str, int], *, timeout=10) -> None', page)
+            self.assertIn('async Client.run(value: dict[str, int], *, timeout = 10) → None',
+                          [node.text for node in ParsedHTML(page).root.find('pre', 'py-api-signature')])
             self.assertIn('&lt;tags&gt; and &#123;expressions&#125;', page)
             self.assertIn('`{"key": 1}`', page)
             self.assertIn('https://example.com/blob/ref/sample/api.py#L3', page)
@@ -67,8 +69,9 @@ class Client(Something):
             (root / '__init__.py').write_text('__all__ = ["_public"]\ndef _public(): pass\ndef excluded(): pass')
             generate(root, root / 'out', 'sample')
             page = (root / 'out/+Page.mdx').read_text()
-            self.assertIn('def _public()', page)
-            self.assertNotIn('def excluded()', page)
+            signatures = [node.text for node in ParsedHTML(page).root.find('pre', 'py-api-signature')]
+            self.assertIn('_public()', signatures)
+            self.assertNotIn('excluded()', signatures)
 
     def test_local_reexports_and_inherited_attributes(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -86,7 +89,9 @@ class Client(Something):
             self.assertIn('`count` — from [`sample.base.Base`](/api/base#base)', child)
             self.assertIn('`__init__` — from [`sample.base.Base`](/api/base#base)', child)
             self.assertNotIn('`tag` — from', child)
-            self.assertIn("tag = 'child'", child)
+            self.assertIn(["tag", "'child'", "—"],
+                          [[cell.text for cell in row.find("td")]
+                           for row in ParsedHTML(child).root.find("tr")])
 
     def test_fenced_code_preserved(self):
         text = 'Text {value}\n```python\nx = {"a": 1}\n```'

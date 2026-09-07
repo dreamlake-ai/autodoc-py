@@ -1,0 +1,197 @@
+/* Python API reference presentation. Import once in your documentation shell.
+   All surfaces derive from the surrounding text color; host themes may override
+   --py-api-accent and --py-api-mono without depending on a particular framework. */
+.py-api {
+  --py-api-accent: #6556a3;
+  --py-api-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --py-api-line: color-mix(in srgb, currentColor 16%, transparent);
+  --py-api-surface: color-mix(in srgb, currentColor 3%, transparent);
+  min-width: 0;
+  margin-block: 2.25rem;
+  border: 1px solid var(--py-api-line);
+  border-radius: 0.6rem;
+  color: inherit;
+  scroll-margin-top: 6rem;
+}
+
+.py-api .py-api-header {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.45rem 0.75rem;
+  min-width: 0;
+  padding: 1rem 1.15rem 0.65rem;
+}
+
+.py-api .py-api-kind {
+  flex: 0 0 auto;
+  font-family: var(--py-api-mono);
+  font-size: 0.7rem;
+  font-weight: 500;
+  line-height: 1.5;
+  letter-spacing: 0.025em;
+  color: color-mix(in srgb, currentColor 65%, transparent);
+}
+
+.py-api .py-api-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  font-family: var(--py-api-mono);
+  font-size: 1rem;
+  font-weight: 650;
+  line-height: 1.55;
+  letter-spacing: -0.025em;
+  overflow-wrap: anywhere;
+}
+
+.py-api .py-api-source {
+  flex: 0 0 auto;
+  margin-inline-start: auto;
+  font-family: var(--py-api-mono);
+  font-size: 0.7rem;
+  font-weight: 400;
+  line-height: 1.6;
+  color: color-mix(in srgb, currentColor 65%, transparent);
+  text-decoration: none;
+  text-underline-offset: 0.2em;
+}
+
+.py-api .py-api-source:hover,
+.py-api .py-api-source:focus-visible {
+  color: inherit;
+  text-decoration: underline;
+}
+
+.py-api .py-api-signature {
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0.85rem 1.15rem;
+  border: 0;
+  border-block: 1px solid var(--py-api-line);
+  border-radius: 0;
+  background: var(--py-api-surface);
+  color: inherit;
+  font-family: var(--py-api-mono);
+  font-size: 0.79rem;
+  line-height: 1.8;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  tab-size: 4;
+}
+
+.py-api .py-api-signature code {
+  display: block;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  white-space: inherit;
+  overflow-wrap: inherit;
+}
+
+.py-api .py-api-param { font-weight: 650; }
+.py-api .py-api-type { color: var(--py-api-accent); font-style: italic; }
+.py-api .py-api-default { color: color-mix(in srgb, currentColor 75%, transparent); }
+.py-api .py-api-punctuation { color: color-mix(in srgb, currentColor 55%, transparent); }
+
+.py-api .py-api-meta {
+  margin: 0;
+  padding: 0.6rem 1.15rem;
+  color: color-mix(in srgb, currentColor 68%, transparent);
+  font-family: var(--py-api-mono);
+  font-size: 0.72rem;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.py-api .py-api-description {
+  min-width: 0;
+  padding: 0.25rem 1.15rem 1rem;
+  font-size: 0.9rem;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+
+.py-api .py-api-description > :first-child { margin-block-start: 0.75rem; }
+.py-api .py-api-description > :last-child { margin-block-end: 0; }
+
+.py-api .py-api-section-label {
+  margin-block: 1.2rem 0.45rem;
+  padding: 0;
+  border: 0;
+  font-size: 0.74rem;
+  font-weight: 650;
+  line-height: 1.5;
+  letter-spacing: 0.035em;
+  color: color-mix(in srgb, currentColor 75%, transparent);
+}
+
+.py-api .py-api-fields {
+  display: table;
+  width: 100%;
+  max-width: 100%;
+  margin-block: 0.4rem 1rem;
+  border: 0;
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-size: 0.82rem;
+  line-height: 1.65;
+}
+
+.py-api .py-api-fields :is(th, td) {
+  padding: 0.55rem 0.65rem;
+  border: 0;
+  border-block-end: 1px solid var(--py-api-line);
+  background: none;
+  vertical-align: top;
+  text-align: start;
+  overflow-wrap: anywhere;
+}
+
+.py-api .py-api-fields th {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: color-mix(in srgb, currentColor 65%, transparent);
+}
+
+.py-api .py-api-fields tr:last-child td { border-block-end: 0; }
+.py-api .py-api-fields :is(th, td):first-child { width: 26%; padding-inline-start: 0; }
+.py-api .py-api-fields :is(th, td):last-child { padding-inline-end: 0; }
+.py-api .py-api-fields code { font-family: var(--py-api-mono); font-size: 0.92em; white-space: normal; }
+
+.py-api .py-api-member {
+  min-width: 0;
+  margin-block: 1.25rem;
+  padding-block-start: 1rem;
+  border-block-start: 1px solid var(--py-api-line);
+  scroll-margin-top: 6rem;
+}
+
+@media (max-width: 560px) {
+  .py-api { margin-block: 1.5rem; border-radius: 0.4rem; }
+  .py-api .py-api-header { gap: 0.3rem 0.5rem; padding: 0.8rem; }
+  .py-api .py-api-name { font-size: 0.9rem; }
+  .py-api .py-api-signature { padding: 0.75rem 0.8rem; font-size: 0.73rem; }
+  .py-api .py-api-meta { padding-inline: 0.8rem; }
+  .py-api .py-api-description { padding-inline: 0.8rem; font-size: 0.85rem; }
+  .py-api .py-api-fields { font-size: 0.76rem; }
+  .py-api .py-api-fields :is(th, td) { padding-inline: 0.35rem; }
+  .py-api .py-api-fields :is(th, td):first-child { width: 29%; }
+}
+
+@media print {
+  .py-api { break-inside: avoid; }
+  .py-api .py-api-signature { background: none; }
+  .py-api .py-api-source { text-decoration: none; }
+}
+
+.dark .py-api, [data-theme="dark"] .py-api { --py-api-accent: #b9a9ed; }
+.py-api .py-api-type { font-style: normal; }
+.py-api a.py-api-type { text-decoration: underline; text-underline-offset: 0.18em; }

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "dreamlake-autodoc-py"
-version = "0.1.0"
+version = "0.2.0a1"
 description = "Import-free Python API documentation for DreamLake Dockit"
 readme = "README.md"
 keywords = ["documentation", "python", "mdx", "dockit", "autodoc"]
@@ -25,3 +25,6 @@ autodoc-py = "autodoc_py:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+autodoc_py = ["*.css"]

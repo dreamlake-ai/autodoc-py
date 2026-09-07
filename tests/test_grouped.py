@@ -1,4 +1,5 @@
 """Reader-facing grouping keeps API links intact without importing the package."""
+import html
 import json
 import re
 import tempfile
@@ -141,7 +142,7 @@ EnvVar = _EnvVar()
         self.build(self.group('overview', 'sample'),
                    self.group('environment', 'sample.env', symbols={'sample.env': ['EnvVar']}))
         page = (self.output / 'environment/+Page.mdx').read_text()
-        self.assertIn('EnvVar = _EnvVar()', page)
+        self.assertIn('EnvVar = _EnvVar()', html.unescape(page))
         self.assertIn('### `EnvVar`', page)
         self.assertIn('#### `EnvVar.__call__`', page)
         self.assertIn('#### `EnvVar.__or__`', page)
