@@ -185,7 +185,8 @@ def render_declaration(node, qualified, source_url, index=None, module=None, url
     raw = getattr(node,'_autodoc_doc',None) or (ast.get_docstring(node) if isinstance(node,(ast.ClassDef,ast.FunctionDef,ast.AsyncFunctionDef)) else '')
     narrative, docs, types, returns, raises = documentation(raw)
     heading=('###' if '.' in qualified else '##') + f' `{qualified}`'
-    lines=[heading,'','<section className="py-api">','<div className="py-api-header">',f'<span className="py-api-kind">{escape(category)}</span>',f'<code className="py-api-name">{escape((module + '.') if module else '')}{escape(qualified)}</code>']
+    module_prefix = module + '.' if module else ''
+    lines=[heading,'','<section className="py-api">','<div className="py-api-header">',f'<span className="py-api-kind">{escape(category)}</span>',f'<code className="py-api-name">{escape(module_prefix)}{escape(qualified)}</code>']
     if source_url: lines.append(f'<a className="py-api-source" href="{html.escape(source_url, quote=True)}#L{node.lineno}">Source ↗</a>')
     lines += ['</div>',f'<pre className="py-api-signature"><code>{signature_markup(node,qualified,index,module,url_prefix)}</code></pre>']
     if isinstance(node,ast.ClassDef) and node.bases:
