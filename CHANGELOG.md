@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- `SourceIndex` computes each export table and each module's data declarations once. Before, every linked type in every signature walked the import graph again and deep-copied the data declarations. The output does not change. On a 2-package source tree of 121 modules (25 grouped pages), generation drops from about 56 s to about 1.5 s.
+
 ## 0.2.0a1 — 2026-09-07
 
 - Add optional `--page-map` topic pages with module patterns, explicit exclusions, per-module symbol selection, API indexes, and namespaced anchors. Module-per-page output remains the default.

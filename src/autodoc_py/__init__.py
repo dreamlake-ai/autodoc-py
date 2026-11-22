@@ -98,12 +98,30 @@ class SourceIndex:
     def __init__(self, sources, root=None):
         self.sources = sources
         self.root = root or min(sources, key=lambda name: len(name.split('.')))
+        # The sources are fixed ASTs, so each export table and each module's data
+        # declarations are computed once. Without this, every linked type in every
+        # signature walks the import graph again and deep-copies data declarations.
+        self._exports = {}
+        self._declarations = {}
 
     def route(self, module, url_prefix):
         relative = module[len(self.root):].strip('.').replace('.', '/')
         return url_prefix.rstrip('/') + ('/' + relative if relative else '')
 
     def exports(self, module, seen=None, public=True):
+        # The result depends only on the arguments; ``seen`` only cuts import cycles.
+        key = (module, frozenset(seen or ()), public)
+        if key not in self._exports:
+            self._exports[key] = self._resolve_exports(module, seen, public)
+        return dict(self._exports[key])
+
+    def declarations(self, module, tree):
+        """Module data and singleton aliases of an indexed module (read-only, computed once)."""
+        if module not in self._declarations:
+            self._declarations[module] = (module_data(tree), assignment_aliases(tree))
+        return self._declarations[module]
+
+    def _resolve_exports(self, module, seen=None, public=True):
         seen = set() if seen is None else set(seen)
         if module in seen or module not in self.sources:
             return {}
@@ -136,8 +154,9 @@ class SourceIndex:
                     explicit = ast.literal_eval(node.value)
                 except (ValueError, TypeError):
                     pass
-        result.update({name: (module, node) for name, node in module_data(tree).items()})
-        result.update({name: (module, node) for name, node in assignment_aliases(tree).items()})
+        data, aliases = self.declarations(module, tree)
+        result.update({name: (module, node) for name, node in data.items()})
+        result.update({name: (module, node) for name, node in aliases.items()})
         if not public:
             return result
         return {name: value for name, value in result.items() if name in explicit} if isinstance(explicit, (list, tuple)) else {name: value for name, value in result.items() if not name.startswith('_')}
